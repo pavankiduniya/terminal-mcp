@@ -1,0 +1,39 @@
+{
+  "name": "@pavanbhatt/terminal-mcp",
+  "version": "1.0.3",
+  "description": "MCP server for remote terminal access via SSH",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "terminal-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "keywords": [
+    "mcp",
+    "ssh",
+    "terminal",
+    "remote",
+    "sftp",
+    "model-context-protocol"
+  ],
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc && chmod +x dist/index.js",
+    "prepublishOnly": "npm run build",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "ssh2": "^1.16.0",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "@types/ssh2": "^1.15.4",
+    "typescript": "^5.8.3"
+  }
+}
