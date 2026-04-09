@@ -1,4 +1,39 @@
 import { Client, SFTPWrapper, ConnectConfig } from "ssh2";
+import { existsSync, readdirSync } from "fs";
+import { join } from "path";
+
+function findAgentSocket(): string | undefined {
+  // 1. Check SSH_AUTH_SOCK env var
+  const envSock = process.env.SSH_AUTH_SOCK;
+  if (envSock && existsSync(envSock)) {
+    return envSock;
+  }
+
+  // 2. macOS: check launchd sockets
+  try {
+    const launchdDir = "/var/run/com.apple.launchd.";
+    const tmpDirs = readdirSync("/var/run/")
+      .filter((d) => d.startsWith("com.apple.launchd."))
+      .map((d) => join("/var/run/", d));
+    for (const dir of tmpDirs) {
+      const sock = join(dir, "Listeners");
+      if (existsSync(sock)) return sock;
+    }
+  } catch {}
+
+  // 3. Linux: check /tmp for ssh-agent sockets
+  try {
+    const tmpDirs = readdirSync("/tmp/")
+      .filter((d) => d.startsWith("ssh-"))
+      .map((d) => join("/tmp/", d));
+    for (const dir of tmpDirs) {
+      const files = readdirSync(dir).filter((f) => f.startsWith("agent."));
+      if (files.length > 0) return join(dir, files[0]);
+    }
+  } catch {}
+
+  return undefined;
+}
 
 export interface ConnectionConfig {
   host: string;
@@ -66,7 +101,7 @@ export class SSHManager {
 
       // Use SSH agent if requested or if no other auth method provided
       if (cfg.useAgent || (!cfg.password && !cfg.privateKey)) {
-        const agentSock = process.env.SSH_AUTH_SOCK;
+        const agentSock = findAgentSocket();
         if (agentSock) {
           connectOpts.agent = agentSock;
         }
