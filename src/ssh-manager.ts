@@ -94,17 +94,25 @@ export class SSHManager {
         host: cfg.host,
         port: cfg.port ?? 22,
         username: cfg.username,
-        password: cfg.password,
-        privateKey: cfg.privateKey,
         readyTimeout: timeout,
       };
 
-      // Use SSH agent if requested or if no other auth method provided
+      // Auth priority: agent > password > privateKey
       if (cfg.useAgent || (!cfg.password && !cfg.privateKey)) {
         const agentSock = findAgentSocket();
         if (agentSock) {
           connectOpts.agent = agentSock;
+          // Don't pass privateKey when using agent — ssh2 will try to parse it
+          // and fail on encrypted keys
+        } else if (cfg.privateKey) {
+          connectOpts.privateKey = cfg.privateKey;
+        } else if (cfg.password) {
+          connectOpts.password = cfg.password;
         }
+      } else if (cfg.privateKey) {
+        connectOpts.privateKey = cfg.privateKey;
+      } else if (cfg.password) {
+        connectOpts.password = cfg.password;
       }
 
       client

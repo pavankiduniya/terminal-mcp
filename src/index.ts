@@ -145,9 +145,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "ssh_connect": {
         const { host, port = 22, username, password, privateKeyPath, useAgent = true, connectTimeout = 15000 } = args as any;
         let privateKey: string | undefined;
-        if (privateKeyPath) {
-          privateKey = readFileSync(privateKeyPath, "utf-8");
+
+        // Only read the key file if NOT using agent auth
+        // Encrypted keys can't be parsed by ssh2 directly
+        if (privateKeyPath && !useAgent) {
+          try {
+            privateKey = readFileSync(privateKeyPath, "utf-8");
+          } catch (e: any) {
+            return { content: [{ type: "text", text: `Failed to read key file: ${e.message}` }], isError: true };
+          }
         }
+
         const result = await ssh.connect({ host, port, username, password, privateKey, useAgent, connectTimeout });
         return { content: [{ type: "text", text: result }] };
       }
