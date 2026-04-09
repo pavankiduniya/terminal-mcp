@@ -8,11 +8,31 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { SSHManager } from "./ssh-manager.js";
 import { readFileSync } from "fs";
+import { resolve, normalize } from "path";
+import { homedir } from "os";
+
+// --- Security helpers ---
+
+function validatePrivateKeyPath(keyPath: string): string {
+  const sshDir = resolve(homedir(), ".ssh");
+  const resolved = resolve(keyPath.replace(/^~\//, homedir() + "/"));
+  if (!resolved.startsWith(sshDir)) {
+    throw new Error(`privateKeyPath must be within ~/.ssh/ directory. Got: ${keyPath}`);
+  }
+  return resolved;
+}
+
+function validateNoTraversal(filePath: string, label: string): void {
+  const normalized = normalize(filePath);
+  if (normalized.includes("..")) {
+    throw new Error(`Path traversal detected in ${label}: ${filePath}`);
+  }
+}
 
 const ssh = new SSHManager();
 
 const server = new Server(
-  { name: "terminal-mcp", version: "1.2.0" },
+  { name: "terminal-mcp", version: "1.2.3" },
   { capabilities: { tools: {} } }
 );
 
@@ -150,7 +170,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // Encrypted keys can't be parsed by ssh2 directly
         if (privateKeyPath && !useAgent) {
           try {
-            privateKey = readFileSync(privateKeyPath, "utf-8");
+            const safePath = validatePrivateKeyPath(privateKeyPath);
+            privateKey = readFileSync(safePath, "utf-8");
           } catch (e: any) {
             return { content: [{ type: "text", text: `Failed to read key file: ${e.message}` }], isError: true };
           }
@@ -172,12 +193,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "ssh_upload": {
         const { host, username, port = 22, localPath, remotePath } = args as any;
+        validateNoTraversal(localPath, "localPath");
+        validateNoTraversal(remotePath, "remotePath");
         const result = await ssh.upload(host, username, localPath, remotePath, port);
         return { content: [{ type: "text", text: result }] };
       }
 
       case "ssh_download": {
         const { host, username, port = 22, remotePath, localPath } = args as any;
+        validateNoTraversal(remotePath, "remotePath");
+        validateNoTraversal(localPath, "localPath");
         const result = await ssh.download(host, username, remotePath, localPath, port);
         return { content: [{ type: "text", text: result }] };
       }
