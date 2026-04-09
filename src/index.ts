@@ -10,7 +10,7 @@ const ssh = new SSHManager();
 
 const server = new McpServer({
   name: "terminal-mcp",
-  version: "1.0.0",
+  version: "1.1.0",
 });
 
 // --- Tools ---
@@ -23,29 +23,18 @@ server.tool(
     port: z.number().optional().default(22).describe("SSH port"),
     username: z.string().describe("SSH username"),
     password: z.string().optional().describe("SSH password"),
-    privateKeyPath: z
-      .string()
-      .optional()
-      .describe("Path to SSH private key file"),
-    useAgent: z
-      .boolean()
-      .optional()
-      .default(true)
-      .describe("Use SSH agent for authentication (defaults to true, uses SSH_AUTH_SOCK)"),
+    privateKeyPath: z.string().optional().describe("Path to SSH private key file"),
+    useAgent: z.boolean().optional().default(true).describe("Use SSH agent for authentication (defaults to true, uses SSH_AUTH_SOCK)"),
+    connectTimeout: z.number().optional().default(15000).describe("Connection timeout in milliseconds"),
   },
-  async ({ host, port, username, password, privateKeyPath, useAgent }) => {
+  async ({ host, port, username, password, privateKeyPath, useAgent, connectTimeout }) => {
     try {
       let privateKey: string | undefined;
       if (privateKeyPath) {
         privateKey = readFileSync(privateKeyPath, "utf-8");
       }
       const result = await ssh.connect({
-        host,
-        port,
-        username,
-        password,
-        privateKey,
-        useAgent,
+        host, port, username, password, privateKey, useAgent, connectTimeout,
       });
       return { content: [{ type: "text", text: result }] };
     } catch (err: any) {
@@ -65,11 +54,7 @@ server.tool(
     username: z.string().describe("SSH username"),
     port: z.number().optional().default(22).describe("SSH port"),
     command: z.string().describe("Command to execute on the remote server"),
-    timeout: z
-      .number()
-      .optional()
-      .default(30000)
-      .describe("Command timeout in milliseconds"),
+    timeout: z.number().optional().default(30000).describe("Command timeout in milliseconds"),
   },
   async ({ host, username, port, command, timeout }) => {
     try {
@@ -81,9 +66,7 @@ server.tool(
       return { content: [{ type: "text", text: parts.join("\n\n") }] };
     } catch (err: any) {
       return {
-        content: [
-          { type: "text", text: `Execution failed: ${err.message}` },
-        ],
+        content: [{ type: "text", text: `Execution failed: ${err.message}` }],
         isError: true,
       };
     }
@@ -102,13 +85,7 @@ server.tool(
   },
   async ({ host, username, port, localPath, remotePath }) => {
     try {
-      const result = await ssh.upload(
-        host,
-        username,
-        localPath,
-        remotePath,
-        port
-      );
+      const result = await ssh.upload(host, username, localPath, remotePath, port);
       return { content: [{ type: "text", text: result }] };
     } catch (err: any) {
       return {
@@ -131,17 +108,56 @@ server.tool(
   },
   async ({ host, username, port, remotePath, localPath }) => {
     try {
-      const result = await ssh.download(
-        host,
-        username,
-        remotePath,
-        localPath,
-        port
-      );
+      const result = await ssh.download(host, username, remotePath, localPath, port);
       return { content: [{ type: "text", text: result }] };
     } catch (err: any) {
       return {
         content: [{ type: "text", text: `Download failed: ${err.message}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+server.tool(
+  "ssh_port_forward",
+  "Forward a remote port to a local port via SSH tunnel",
+  {
+    host: z.string().describe("Hostname or IP of the SSH server"),
+    username: z.string().describe("SSH username"),
+    port: z.number().optional().default(22).describe("SSH port"),
+    remoteHost: z.string().describe("Remote host to forward (e.g. 127.0.0.1 or a database host)"),
+    remotePort: z.number().describe("Remote port to forward (e.g. 5432 for PostgreSQL)"),
+    localPort: z.number().describe("Local port to listen on"),
+  },
+  async ({ host, username, port, remoteHost, remotePort, localPort }) => {
+    try {
+      const result = await ssh.portForward(host, username, remoteHost, remotePort, localPort, port);
+      return { content: [{ type: "text", text: result }] };
+    } catch (err: any) {
+      return {
+        content: [{ type: "text", text: `Port forward failed: ${err.message}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+server.tool(
+  "ssh_reconnect",
+  "Reconnect to a previously connected server using stored credentials",
+  {
+    host: z.string().describe("Hostname or IP of the target server"),
+    username: z.string().describe("SSH username"),
+    port: z.number().optional().default(22).describe("SSH port"),
+  },
+  async ({ host, username, port }) => {
+    try {
+      const result = await ssh.reconnect(host, username, port);
+      return { content: [{ type: "text", text: result }] };
+    } catch (err: any) {
+      return {
+        content: [{ type: "text", text: `Reconnect failed: ${err.message}` }],
         isError: true,
       };
     }
@@ -168,11 +184,15 @@ server.tool(
   {},
   async () => {
     const connections = ssh.listConnections();
-    const text =
-      connections.length > 0
-        ? `Active connections:\n${connections.join("\n")}`
-        : "No active connections";
-    return { content: [{ type: "text", text }] };
+    if (connections.length === 0) {
+      return { content: [{ type: "text", text: "No active connections" }] };
+    }
+    const lines = connections.map(
+      (c) => `${c.id}${c.isDefault ? " (default)" : ""}`
+    );
+    return {
+      content: [{ type: "text", text: `Active connections:\n${lines.join("\n")}` }],
+    };
   }
 );
 
